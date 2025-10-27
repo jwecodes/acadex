@@ -33,7 +33,7 @@ This project aims to build a **centralized digital repository** with structured 
 - **Backend / Database**: [Supabase](https://supabase.io/) (Postgres + Auth + API)  
 - **File Storage**: S3 service by Supabase (teaching resources storage)  
 - **Authentication**: Supabase Auth (role-based access)  
-- **Deployment**: Vercel / AWS  
+- **Deployment**: Vercel
 
 ---
 
