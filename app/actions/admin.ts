@@ -17,7 +17,6 @@ export async function createProgramme(data: {
   noOfStudents: number
 }) {
   try {
-    // Clean up the data before inserting
     const cleanData = {
       session: data.session,
       programmeCode: data.programmeCode,
@@ -35,7 +34,6 @@ export async function createProgramme(data: {
   } catch (error: any) {
     console.error('Create programme error:', error)
     
-    // Check for unique constraint violation
     if (error.code === 'P2002') {
       const section = data.section ? ` Section ${data.section}` : ''
       return { 
@@ -61,7 +59,6 @@ export async function getProgrammes() {
 
 export async function updateProgramme(id: string, data: any) {
   try {
-    // Clean up the data before updating
     const cleanData = {
       session: data.session,
       programmeCode: data.programmeCode,
@@ -117,15 +114,30 @@ export async function createCourse(data: {
   s: number
   credits: number
   totalHours: number
-  courseType: 'THEORY' | 'PRACTICAL' | 'LAB'
-  roomNo?: string
+  courseType: string
+  deliveryMode: string
+  roomNo: string | null
   attendance: boolean
-  category: 'MANDATORY' | 'ELECTIVE'
+  category: string
 }) {
   try {
     const cleanData = {
-      ...data,
-      roomNo: data.roomNo || null
+      session: data.session,
+      programmeId: data.programmeId,
+      semester: data.semester,
+      courseCode: data.courseCode,
+      courseName: data.courseName,
+      l: data.l,
+      t: data.t,
+      p: data.p,
+      s: data.s,
+      credits: data.credits,
+      totalHours: data.totalHours,
+      courseType: (data.courseType || 'CORE') as any,
+      deliveryMode: (data.deliveryMode || 'THEORY') as any,
+      roomNo: data.roomNo || null,
+      attendance: data.attendance,
+      category: (data.category || 'MANDATORY') as any
     }
     
     await prisma.course.create({ data: cleanData })
@@ -160,8 +172,21 @@ export async function getCourses() {
 export async function updateCourse(id: string, data: any) {
   try {
     const cleanData = {
-      ...data,
-      roomNo: data.roomNo || null
+      session: data.session,
+      semester: data.semester,
+      courseCode: data.courseCode,
+      courseName: data.courseName,
+      l: data.l,
+      t: data.t,
+      p: data.p,
+      s: data.s,
+      credits: data.credits,
+      totalHours: data.totalHours,
+      courseType: (data.courseType || 'CORE') as any,
+      deliveryMode: (data.deliveryMode || 'THEORY') as any,
+      roomNo: data.roomNo || null,
+      attendance: data.attendance,
+      category: (data.category || 'MANDATORY') as any
     }
     
     await prisma.course.update({ where: { id }, data: cleanData })
@@ -192,6 +217,78 @@ export async function deleteCourse(id: string) {
   }
 }
 
+export async function syncCoursesAcrossSections() {
+  try {
+    const programmes = await prisma.programme.findMany({
+      select: { id: true, session: true, programmeCode: true, section: true }
+    })
+
+    const grouped = new Map<string, any[]>()
+    programmes.forEach(p => {
+      const key = `${p.session}|${p.programmeCode}`
+      if (!grouped.has(key)) {
+        grouped.set(key, [])
+      }
+      grouped.get(key)!.push(p)
+    })
+
+    let totalSynced = 0
+
+    for (const [key, progs] of grouped.entries()) {
+      if (progs.length <= 1) continue
+
+      const sourceSection = progs.sort((a, b) => 
+        (a.section || 'ZZ').localeCompare(b.section || 'ZZ')
+      )[0]
+
+      const sourceCourses = await prisma.course.findMany({
+        where: { programmeId: sourceSection.id },
+        select: {
+          semester: true,
+          courseCode: true,
+          courseName: true,
+          l: true,
+          t: true,
+          p: true,
+          s: true,
+          credits: true,
+          totalHours: true,
+          courseType: true,
+          deliveryMode: true,
+          roomNo: true,
+          attendance: true,
+          category: true
+        }
+      })
+
+      for (const targetProg of progs) {
+        if (targetProg.id === sourceSection.id) continue
+
+        for (const course of sourceCourses) {
+          try {
+            await prisma.course.create({
+              data: {
+                session: targetProg.session,
+                programmeId: targetProg.id,
+                ...course
+              }
+            })
+            totalSynced++
+          } catch (e) {
+            // Silently skip duplicates
+          }
+        }
+      }
+    }
+
+    revalidatePath('/admin/courses')
+    return { success: true, message: `Successfully synced ${totalSynced} courses across sections!` }
+  } catch (error: any) {
+    console.error('Sync courses error:', error)
+    return { success: false, error: error.message || 'Failed to sync courses' }
+  }
+}
+
 // ============================================
 // FACULTY ACTIONS
 // ============================================
@@ -201,17 +298,16 @@ export async function createFaculty(data: {
   name: string
   designation: string
   email: string
-  contactNo: string
+  contactNo: string | null
   department?: string
-  session: string
+  programmeId?: string
 }) {
   try {
-    // For now, create a basic user entry (we'll integrate auth later)
     const user = await prisma.user.create({
       data: {
         email: data.email,
         name: data.name,
-        role: 'FACULTY'
+        role: 'FACULTY' as any
       }
     })
 
@@ -222,9 +318,9 @@ export async function createFaculty(data: {
         name: data.name,
         designation: data.designation,
         email: data.email,
-        contactNo: data.contactNo,
+        contactNo: data.contactNo || null,
         department: data.department || null,
-        session: data.session
+        programmeId: data.programmeId || null
       }
     })
     
@@ -239,7 +335,7 @@ export async function createFaculty(data: {
       }
       return { 
         success: false, 
-        error: `Faculty ID "${data.facultyId}" already exists in session "${data.session}".` 
+        error: `Faculty ID "${data.facultyId}" already exists.` 
       }
     }
     
@@ -250,7 +346,7 @@ export async function createFaculty(data: {
 export async function getFaculty() {
   try {
     return await prisma.faculty.findMany({
-      include: { user: true },
+      include: { user: true, programme: true },
       orderBy: { createdAt: 'desc' }
     })
   } catch (error) {
@@ -266,9 +362,9 @@ export async function updateFaculty(id: string, data: any) {
       name: data.name,
       designation: data.designation,
       email: data.email,
-      contactNo: data.contactNo,
+      contactNo: data.contactNo || null,
       department: data.department || null,
-      session: data.session
+      programmeId: data.programmeId || null
     }
     
     await prisma.faculty.update({ where: { id }, data: cleanData })
@@ -283,7 +379,7 @@ export async function updateFaculty(id: string, data: any) {
       }
       return { 
         success: false, 
-        error: `Faculty ID "${data.facultyId}" already exists in session "${data.session}".` 
+        error: `Faculty ID "${data.facultyId}" already exists.` 
       }
     }
     
@@ -342,13 +438,11 @@ export async function getCourseAllocations(courseId: string) {
 
 export async function setCoordinator(courseId: string, allocationId: string) {
   try {
-    // Set all to contributors first
     await prisma.courseAllocation.updateMany({
       where: { courseId },
       data: { role: 'CONTRIBUTOR' }
     })
     
-    // Set selected as coordinator
     await prisma.courseAllocation.update({
       where: { id: allocationId },
       data: { role: 'COORDINATOR' }
@@ -375,115 +469,6 @@ export async function removeAllocation(id: string) {
 }
 
 // ============================================
-// CONTENT REVIEW ACTIONS
-// ============================================
-
-export async function getPendingContent() {
-  try {
-    return await prisma.teachingContent.findMany({
-      where: { approvalStatus: 'PENDING' },
-      include: {
-        course: { include: { programme: true } },
-        faculty: true
-      },
-      orderBy: { createdAt: 'desc' }
-    })
-  } catch (error) {
-    console.error('Get pending content error:', error)
-    return []
-  }
-}
-
-export async function approveContent(id: string, notes?: string) {
-  try {
-    await prisma.teachingContent.update({
-      where: { id },
-      data: {
-        approvalStatus: 'APPROVED',
-        coordinatorNotes: notes || null,
-        updatedAt: new Date()
-      }
-    })
-    revalidatePath('/admin/content-review')
-    return { success: true }
-  } catch (error: any) {
-    console.error('Approve content error:', error)
-    return { success: false, error: error.message || 'Failed to approve content' }
-  }
-}
-
-export async function requestChanges(id: string, notes: string) {
-  try {
-    await prisma.teachingContent.update({
-      where: { id },
-      data: {
-        approvalStatus: 'CHANGES_REQUIRED',
-        coordinatorNotes: notes,
-        updatedAt: new Date()
-      }
-    })
-    revalidatePath('/admin/content-review')
-    return { success: true }
-  } catch (error: any) {
-    console.error('Request changes error:', error)
-    return { success: false, error: error.message || 'Failed to request changes' }
-  }
-}
-
-export async function getTeachingContentByFaculty(facultyId: string, courseId?: string) {
-  try {
-    const where = courseId 
-      ? { facultyId, courseId }
-      : { facultyId }
-    
-    return await prisma.teachingContent.findMany({
-      where,
-      include: {
-        course: {
-          include: {
-            programme: true
-          }
-        }
-      },
-      orderBy: { createdAt: 'desc' }
-    })
-  } catch (error) {
-    console.error('Get teaching content error:', error)
-    return []
-  }
-}
-
-// ============================================
-// DASHBOARD STATS
-// ============================================
-
-export async function getDashboardStats() {
-  try {
-    const [totalProgrammes, totalCourses, totalFaculty, pendingApprovals] = await Promise.all([
-      prisma.programme.count(),
-      prisma.course.count(),
-      prisma.faculty.count(),
-      prisma.teachingContent.count({ where: { approvalStatus: 'PENDING' } })
-    ])
-
-    return {
-      totalProgrammes,
-      totalCourses,
-      totalFaculty,
-      pendingApprovals
-    }
-  } catch (error) {
-    console.error('Get dashboard stats error:', error)
-    return {
-      totalProgrammes: 0,
-      totalCourses: 0,
-      totalFaculty: 0,
-      pendingApprovals: 0
-    }
-  }
-}
-
-// ============================================
 // BULK UPLOAD ACTIONS
 // ============================================
 
@@ -499,7 +484,6 @@ export async function bulkUploadProgrammes(data: any[]) {
       noOfStudents: parseInt(row.noOfStudents || row['No of Students'] || 0)
     }))
 
-    // Validate that we have required fields
     const validProgrammes = programmes.filter(p => 
       p.session && p.programmeCode && p.programmeName
     )
@@ -523,53 +507,125 @@ export async function bulkUploadProgrammes(data: any[]) {
 
 export async function bulkUploadCourses(data: any[]) {
   try {
-    const courses = await Promise.all(
-      data.map(async (row) => {
-        const session = row.session || row.Session || ''
-        const programmeCode = row.programmeCode || row['Programme Code'] || ''
-        
-        // Find programme by session and code (any section)
-        const programme = await prisma.programme.findFirst({
-          where: { 
-            session,
-            programmeCode
-          }
+    const allProgrammes = await prisma.programme.findMany({
+      select: { id: true, session: true, programmeCode: true }
+    })
+
+    interface ValidCourse {
+      session: string
+      programmeId: string
+      semester: number
+      courseCode: string
+      courseName: string
+      l: number
+      t: number
+      p: number
+      s: number
+      credits: number
+      totalHours: number
+      courseType: any
+      deliveryMode: any
+      roomNo: string | null
+      attendance: boolean
+      category: any
+    }
+
+    const validCourses: ValidCourse[] = []
+    const failedCourses: { row: number; courseCode: string; reason: string }[] = []
+
+    data.forEach((row, index) => {
+      const session = row.session || row.Session || ''
+      const programmeCode = row.programmeCode || row['Programme Code'] || ''
+      const courseCode = row.courseCode || row['Course Code'] || ''
+      const courseName = row.courseName || row['Course Name'] || ''
+
+      if (!session) {
+        failedCourses.push({ row: index + 1, courseCode, reason: 'Missing Session' })
+        return
+      }
+
+      if (!programmeCode) {
+        failedCourses.push({ row: index + 1, courseCode, reason: 'Missing Programme Code' })
+        return
+      }
+
+      if (!courseCode) {
+        failedCourses.push({ row: index + 1, courseCode: '[Empty]', reason: 'Missing Course Code' })
+        return
+      }
+
+      if (!courseName) {
+        failedCourses.push({ row: index + 1, courseCode, reason: 'Missing Course Name' })
+        return
+      }
+
+      const programme = allProgrammes.find(
+        p => p.session === session && p.programmeCode === programmeCode
+      )
+
+      if (!programme) {
+        failedCourses.push({ 
+          row: index + 1, 
+          courseCode, 
+          reason: `Programme "${programmeCode}" not found in session "${session}"` 
         })
+        return
+      }
 
-        if (!programme) {
-          throw new Error(`Programme "${programmeCode}" not found in session "${session}"`)
-        }
-
-        return {
-          session,
-          programmeId: programme.id,
-          semester: parseInt(row.semester || row.Semester || 1),
-          courseCode: row.courseCode || row['Course Code'] || '',
-          courseName: row.courseName || row['Course Name'] || '',
-          l: parseInt(row.l || row.L || 0),
-          t: parseInt(row.t || row.T || 0),
-          p: parseInt(row.p || row.P || 0),
-          s: parseInt(row.s || row.S || 0),
-          credits: parseInt(row.credits || row.Credits || 0),
-          totalHours: parseInt(row.totalHours || row['Total Hours'] || 0),
-          courseType: (row.courseType || row['Course Type'] || 'THEORY') as any,
-          roomNo: row.roomNo || row['Room No'] || null,
-          attendance: row.attendance === 'Yes' || row.Attendance === 'Yes',
-          category: (row.category || row.Category || 'MANDATORY') as any
-        }
+      validCourses.push({
+        session,
+        programmeId: programme.id,
+        semester: parseInt(row.semester || row.Semester || 1),
+        courseCode,
+        courseName,
+        l: parseInt(row.l || row.L || 0),
+        t: parseInt(row.t || row.T || 0),
+        p: parseInt(row.p || row.P || 0),
+        s: parseInt(row.s || row.S || 0),
+        credits: parseInt(row.credits || row.Credits || 0),
+        totalHours: parseInt(row.totalHours || row['Total Hours'] || 0),
+        courseType: (row.courseType || row['Course Type'] || 'CORE') as any,
+        deliveryMode: (row.deliveryMode || row['Delivery Mode'] || 'THEORY') as any,
+        roomNo: row.roomNo || row['Room No'] || null,
+        attendance: row.attendance === 'Yes' || row.Attendance === 'Yes',
+        category: (row.category || row.Category || 'MANDATORY') as any
       })
-    )
+    })
 
-    await prisma.course.createMany({
-      data: courses,
+    if (validCourses.length === 0) {
+      const errorList = failedCourses.map(f => `Row ${f.row} (${f.courseCode}): ${f.reason}`).join('\n')
+      return { 
+        success: false, 
+        error: `All courses failed validation:\n${errorList}` 
+      }
+    }
+
+    const result = await prisma.course.createMany({
+      data: validCourses,
       skipDuplicates: true
     })
 
     revalidatePath('/admin/courses')
-    return { success: true, count: courses.length }
+
+    let message = `Successfully uploaded ${result.count} out of ${validCourses.length} valid courses.`
+    if (failedCourses.length > 0) {
+      const errorList = failedCourses
+        .slice(0, 10)
+        .map(f => `Row ${f.row} (${f.courseCode}): ${f.reason}`)
+        .join('\n')
+      const moreText = failedCourses.length > 10 ? `\n... and ${failedCourses.length - 10} more errors` : ''
+      message += `\n\nFailed to validate ${failedCourses.length} rows:\n${errorList}${moreText}`
+    }
+
+    return { 
+      success: true, 
+      count: result.count,
+      message,
+      failedCount: failedCourses.length
+    }
   } catch (error: any) {
     console.error('Bulk upload courses error:', error)
-    return { success: false, error: error.message || 'Failed to upload courses. Check your data format.' }
+    return { success: false, error: error.message || 'Failed to upload courses.' }
   }
 }
 
@@ -579,18 +635,16 @@ export async function bulkUploadFaculty(data: any[]) {
       data.map(async (row) => {
         const email = row.email || row.Email || ''
         
-        // Check if user already exists
         let user = await prisma.user.findUnique({
           where: { email }
         })
 
         if (!user) {
-          // Create user first
           user = await prisma.user.create({
             data: {
               email,
               name: row.name || row.Name || '',
-              role: 'FACULTY'
+              role: 'FACULTY' as any
             }
           })
         }
@@ -603,7 +657,7 @@ export async function bulkUploadFaculty(data: any[]) {
           email,
           contactNo: row.contactNo || row['Contact No'] || '',
           department: row.department || row.Department || null,
-          session: row.session || row.Session || ''
+          programmeId: null
         }
       })
     )
@@ -618,5 +672,113 @@ export async function bulkUploadFaculty(data: any[]) {
   } catch (error: any) {
     console.error('Bulk upload faculty error:', error)
     return { success: false, error: error.message || 'Failed to upload faculty. Check your data format.' }
+  }
+}
+
+// ✅ NEW: Bulk upload faculty allocations with programme code
+export async function bulkUploadFacultyAllocations(data: any[]) {
+  try {
+    const allFaculty = await prisma.faculty.findMany({
+      select: { id: true, facultyId: true }
+    })
+
+    const allCourses = await prisma.course.findMany({
+      select: { 
+        id: true, 
+        courseCode: true, 
+        programme: { select: { programmeCode: true } } 
+      }
+    })
+
+    interface ValidAllocation {
+      courseId: string
+      facultyId: string
+      role: any
+    }
+
+    const validAllocations: ValidAllocation[] = []
+    const failedAllocations: { row: number; reason: string }[] = []
+
+    data.forEach((row, index) => {
+      const facultyId = row['Faculty ID'] || ''
+      const courseCode = row['Course Code'] || ''
+      const programmeCode = row['Programme Code'] || ''
+      const role = row['Role'] || 'CONTRIBUTOR'
+
+      if (!facultyId) {
+        failedAllocations.push({ row: index + 1, reason: 'Missing Faculty ID' })
+        return
+      }
+
+      if (!courseCode) {
+        failedAllocations.push({ row: index + 1, reason: 'Missing Course Code' })
+        return
+      }
+
+      if (!programmeCode) {
+        failedAllocations.push({ row: index + 1, reason: 'Missing Programme Code' })
+        return
+      }
+
+      if (role !== 'COORDINATOR' && role !== 'CONTRIBUTOR') {
+        failedAllocations.push({ row: index + 1, reason: `Invalid role: "${role}" (must be COORDINATOR or CONTRIBUTOR)` })
+        return
+      }
+
+      const faculty = allFaculty.find(f => f.facultyId === facultyId)
+      if (!faculty) {
+        failedAllocations.push({ row: index + 1, reason: `Faculty ID "${facultyId}" not found` })
+        return
+      }
+
+      const course = allCourses.find(c => 
+        c.courseCode === courseCode && c.programme.programmeCode === programmeCode
+      )
+      if (!course) {
+        failedAllocations.push({ row: index + 1, reason: `Course "${courseCode}" not found in "${programmeCode}"` })
+        return
+      }
+
+      validAllocations.push({
+        courseId: course.id,
+        facultyId: faculty.id,
+        role: role as any
+      })
+    })
+
+    if (validAllocations.length === 0) {
+      const errorList = failedAllocations.map(f => `Row ${f.row}: ${f.reason}`).join('\n')
+      return { 
+        success: false, 
+        error: `All allocations failed validation:\n${errorList}` 
+      }
+    }
+
+    const result = await prisma.courseAllocation.createMany({
+      data: validAllocations,
+      skipDuplicates: true
+    })
+
+    revalidatePath('/admin/faculty')
+
+    let message = `Successfully allocated ${result.count} out of ${validAllocations.length} faculty to courses.`
+    if (failedAllocations.length > 0) {
+      const errorList = failedAllocations
+        .slice(0, 10)
+        .map(f => `Row ${f.row}: ${f.reason}`)
+        .join('\n')
+      const moreText = failedAllocations.length > 10 ? `\n... and ${failedAllocations.length - 10} more errors` : ''
+      message += `\n\nFailed to validate ${failedAllocations.length} rows:\n${errorList}${moreText}`
+    }
+
+    return { 
+      success: true, 
+      count: result.count,
+      message,
+      failedCount: failedAllocations.length
+    }
+  } catch (error: any) {
+    console.error('Bulk upload faculty allocations error:', error)
+    return { success: false, error: error.message || 'Failed to upload allocations.' }
   }
 }

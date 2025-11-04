@@ -3,47 +3,51 @@ import { prisma } from '@/lib/prisma'
 
 export async function GET(request: NextRequest) {
   try {
-    const { searchParams } = new URL(request.url)
-    const facultyId = searchParams.get('facultyId')
+    const facultyId = request.headers.get('x-faculty-id')
 
     if (!facultyId) {
-      return NextResponse.json(
-        { success: false, error: 'Faculty ID required' },
-        { status: 400 }
-      )
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
     }
 
-    const allocations = await prisma.courseAllocation.findMany({
+    const assignments = await prisma.courseAllocation.findMany({
       where: { facultyId },
       include: {
         course: {
           include: {
-            programme: true
+            programme: {
+              select: {
+                id: true,
+                programmeCode: true,
+                programmeName: true,
+                section: true
+              }
+            }
           }
         }
+      },
+      orderBy: {
+        course: { courseCode: 'asc' }
       }
     })
 
-    const courses = allocations.map((alloc: any) => ({  // Add type annotation
-      courseId: alloc.courseId,
-      role: alloc.role,
-      courseCode: alloc.course.courseCode,
-      courseName: alloc.course.courseName,
-      session: alloc.course.session,
-      semester: alloc.course.semester,
-      credits: alloc.course.credits,
-      programme: alloc.course.programme
-    }))
+    const contentStats = await prisma.teachingContent.groupBy({
+      by: ['approvalStatus'],
+      where: { facultyId },
+      _count: true
+    })
+
+    const contentSubmitted = contentStats.reduce((acc, item) => acc + item._count, 0)
+    const pendingApproval = contentStats.find(c => c.approvalStatus === 'PENDING')?._count || 0
+    const approved = contentStats.find(c => c.approvalStatus === 'APPROVED')?._count || 0
 
     return NextResponse.json({
       success: true,
-      courses
+      assignments,
+      contentSubmitted,
+      pendingApproval,
+      approved
     })
-  } catch (error) {
-    console.error('Courses error:', error)
-    return NextResponse.json(
-      { success: false, error: 'Failed to load courses' },
-      { status: 500 }
-    )
+  } catch (error: any) {
+    return NextResponse.json({ success: false, error: error.message }, { status: 500 })
   }
 }

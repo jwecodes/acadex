@@ -21,7 +21,6 @@ export default function Sidebar() {
     { href: '/admin/courses', icon: GraduationCap, label: 'Courses' },
     { href: '/admin/faculty', icon: Users, label: 'Faculty' },
     { href: '/admin/students', icon: Users, label: 'Students' },
-    { href: '/admin/enrollments', icon: UserCheck, label: 'Enrollments' },
     { href: '/admin/course-coordination', icon: Crown, label: 'Course Coordination' },
     { href: '/admin/content-review', icon: FileCheck, label: 'Content Review' },
   ]

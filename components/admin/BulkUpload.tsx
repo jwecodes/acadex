@@ -4,19 +4,23 @@ import { Upload, Download, X } from 'lucide-react'
 import toast from 'react-hot-toast'
 import * as XLSX from 'xlsx'
 
+
 interface BulkUploadProps {
   type: 'programmes' | 'courses' | 'faculty'
   onUpload: (data: any[]) => Promise<{ success: boolean; count?: number; error?: string }>
   onClose: () => void
 }
 
+
 export default function BulkUpload({ type, onUpload, onClose }: BulkUploadProps) {
   const [uploading, setUploading] = useState(false)
   const [previewData, setPreviewData] = useState<any[]>([])
 
+
   const getTemplate = () => {
     let template: any[] = []
     let fileName = ''
+
 
     if (type === 'programmes') {
       template = [
@@ -41,44 +45,69 @@ export default function BulkUpload({ type, onUpload, onClose }: BulkUploadProps)
       ]
       fileName = 'programmes_template.xlsx'
     } else if (type === 'courses') {
+      // ✅ UPDATED: Changed to match actual course fields with Section
       template = [
         {
           'Session': '2024-2025',
           'Programme Code': 'BTECH-CSE',
-          'Semester': 1,
+          'Section': 'A',
           'Course Code': 'CS101',
-          'Course Name': 'Programming Fundamentals',
+          'Course Name': 'Data Structures',
+          'Semester': 3,
           'L': 3,
           'T': 1,
           'P': 0,
-          'S': 2,
+          'S': 0,
           'Credits': 4,
           'Total Hours': 4,
-          'Course Type': 'THEORY',
+          'Course Type': 'CORE',
+          'Delivery Mode': 'THEORY',
+          'Category': 'MANDATORY',
           'Room No': 'A-101',
-          'Attendance': 'Yes',
-          'Category': 'MANDATORY'
+          'Attendance': 'Yes'
         },
         {
           'Session': '2024-2025',
           'Programme Code': 'BTECH-CSE',
-          'Semester': 1,
+          'Section': 'A',
           'Course Code': 'CS102',
-          'Course Name': 'Data Structures Lab',
+          'Course Name': 'Web Development',
+          'Semester': 4,
+          'L': 2,
+          'T': 1,
+          'P': 2,
+          'S': 0,
+          'Credits': 4,
+          'Total Hours': 5,
+          'Course Type': 'OPEN_ELECTIVE',
+          'Delivery Mode': 'BOTH',
+          'Category': 'ELECTIVE',
+          'Room No': 'B-205',
+          'Attendance': 'Yes'
+        },
+        {
+          'Session': '2024-2025',
+          'Programme Code': 'BTECH-CSE',
+          'Section': 'B',
+          'Course Code': 'CS103',
+          'Course Name': 'Database Lab',
+          'Semester': 3,
           'L': 0,
           'T': 0,
-          'P': 2,
-          'S': 1,
+          'P': 3,
+          'S': 0,
           'Credits': 2,
-          'Total Hours': 2,
-          'Course Type': 'LAB',
-          'Room No': 'Lab-1',
-          'Attendance': 'Yes',
-          'Category': 'MANDATORY'
+          'Total Hours': 3,
+          'Course Type': 'CORE',
+          'Delivery Mode': 'PRACTICAL',
+          'Category': 'MANDATORY',
+          'Room No': 'LAB-01',
+          'Attendance': 'Yes'
         }
       ]
       fileName = 'courses_template.xlsx'
     } else if (type === 'faculty') {
+      // ✅ FIXED: Added Course Code, Programme Code, and Section columns
       template = [
         {
           'Faculty ID': 'FAC001',
@@ -87,7 +116,20 @@ export default function BulkUpload({ type, onUpload, onClose }: BulkUploadProps)
           'Email': 'john.doe@university.edu',
           'Contact No': '+91-9876543210',
           'Department': 'Computer Science',
-          'Session': '2024-2025'
+          'Course Code': 'CS101',
+          'Programme Code': 'BTECH-CSE',
+          'Section': 'A'
+        },
+        {
+          'Faculty ID': 'FAC001',
+          'Name': 'Dr. John Doe',
+          'Designation': 'Professor',
+          'Email': 'john.doe@university.edu',
+          'Contact No': '+91-9876543210',
+          'Department': 'Computer Science',
+          'Course Code': 'CS102',
+          'Programme Code': 'BTECH-CSE',
+          'Section': 'B'
         },
         {
           'Faculty ID': 'FAC002',
@@ -96,25 +138,31 @@ export default function BulkUpload({ type, onUpload, onClose }: BulkUploadProps)
           'Email': 'jane.smith@university.edu',
           'Contact No': '+91-9876543211',
           'Department': 'Computer Science',
-          'Session': '2024-2025'
+          'Course Code': 'IT201',
+          'Programme Code': 'BTECH-IT',
+          'Section': 'A'
         }
       ]
       fileName = 'faculty_template.xlsx'
     }
+
 
     // Create workbook and worksheet
     const ws = XLSX.utils.json_to_sheet(template)
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, ws, 'Template')
 
+
     // Download
     XLSX.writeFile(wb, fileName)
     toast.success('Template downloaded!')
   }
 
+
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
+
 
     const reader = new FileReader()
     reader.onload = (event) => {
@@ -125,10 +173,12 @@ export default function BulkUpload({ type, onUpload, onClose }: BulkUploadProps)
         const worksheet = workbook.Sheets[sheetName]
         const jsonData = XLSX.utils.sheet_to_json(worksheet)
 
+
         if (jsonData.length === 0) {
           toast.error('Excel file is empty')
           return
         }
+
 
         // Convert to plain objects to avoid Server Action serialization issues
         const plainData = JSON.parse(JSON.stringify(jsonData))
@@ -142,11 +192,13 @@ export default function BulkUpload({ type, onUpload, onClose }: BulkUploadProps)
     reader.readAsArrayBuffer(file)
   }
 
+
   const handleUpload = async () => {
     if (previewData.length === 0) {
       toast.error('No data to upload')
       return
     }
+
 
     setUploading(true)
     try {
@@ -169,6 +221,7 @@ export default function BulkUpload({ type, onUpload, onClose }: BulkUploadProps)
     }
   }
 
+
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
       <div className="bg-white rounded-lg p-6 w-full max-w-4xl mx-4 max-h-[90vh] overflow-y-auto">
@@ -178,6 +231,7 @@ export default function BulkUpload({ type, onUpload, onClose }: BulkUploadProps)
             <X className="h-6 w-6" />
           </button>
         </div>
+
 
         <div className="space-y-4">
           {/* Download Template */}
@@ -194,6 +248,7 @@ export default function BulkUpload({ type, onUpload, onClose }: BulkUploadProps)
               Download Template
             </button>
           </div>
+
 
           {/* Upload File */}
           <div className="bg-green-50 border border-green-200 rounded-lg p-4">
@@ -212,6 +267,7 @@ export default function BulkUpload({ type, onUpload, onClose }: BulkUploadProps)
               />
             </label>
           </div>
+
 
           {/* Preview Data */}
           {previewData.length > 0 && (
@@ -251,6 +307,7 @@ export default function BulkUpload({ type, onUpload, onClose }: BulkUploadProps)
                 )}
               </div>
 
+
               <button
                 onClick={handleUpload}
                 disabled={uploading}
@@ -261,13 +318,22 @@ export default function BulkUpload({ type, onUpload, onClose }: BulkUploadProps)
             </div>
           )}
 
+
           {/* Instructions */}
           <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
             <h3 className="font-semibold mb-2 text-gray-900">Important Notes:</h3>
             <ul className="text-sm text-gray-600 space-y-1 list-disc list-inside">
               <li>Do not change column names in the template</li>
-              <li>Fill all required fields (marked in red in template)</li>
-              {type === 'courses' && <li>Make sure Programme Code exists before uploading courses</li>}
+              <li>Fill all required fields</li>
+              {type === 'programmes' && <li>Session format should be YYYY-YYYY (e.g., 2024-2025)</li>}
+              {type === 'courses' && (
+                <>
+                  <li>Make sure Programme Code exists before uploading courses</li>
+                  <li>Section must match an existing section for the programme</li>
+                  <li>Course codes must be unique within a programme & section</li>
+                </>
+              )}
+              {type === 'faculty' && <li>Same Faculty ID with different courses should be on separate rows</li>}
               <li>Duplicate entries will be skipped automatically</li>
             </ul>
           </div>

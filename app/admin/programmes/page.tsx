@@ -23,6 +23,8 @@ export default function ProgrammesPage() {
   const [showBulkUpload, setShowBulkUpload] = useState(false)
   const [loading, setLoading] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
+  const [selectedSession, setSelectedSession] = useState<string>('all')
+  const [availableSessions, setAvailableSessions] = useState<string[]>([])
   const [formData, setFormData] = useState({
     session: '',
     programmeCode: '',
@@ -34,28 +36,91 @@ export default function ProgrammesPage() {
   })
   const [editingId, setEditingId] = useState<string | null>(null)
 
+  // Statistics
+  const [stats, setStats] = useState({
+    totalProgrammes: 0,
+    totalCourses: 0,
+    totalStudents: 0,
+    totalSections: 0
+  })
+
+  // Sorting function for programmes
+  const sortProgrammes = (programmesToSort: Programme[]): Programme[] => {
+    return [...programmesToSort].sort((a, b) => {
+      // First, sort by session (most recent first - descending)
+      if (a.session !== b.session) {
+        return b.session.localeCompare(a.session)
+      }
+
+      // Second, sort by programme code (alphabetically - ascending)
+      if (a.programmeCode !== b.programmeCode) {
+        return a.programmeCode.localeCompare(b.programmeCode)
+      }
+
+      // Third, sort by section (A, B, C... with null sections at the end)
+      // Handle null sections
+      if (a.section === null && b.section === null) return 0
+      if (a.section === null) return 1  // Move null to end
+      if (b.section === null) return -1 // Move null to end
+      
+      // Compare sections alphabetically
+      return a.section.localeCompare(b.section)
+    })
+  }
+
   useEffect(() => {
     loadProgrammes()
   }, [])
 
   useEffect(() => {
-    // Filter programmes based on search term
-    if (searchTerm.trim() === '') {
-      setFilteredProgrammes(programmes)
-    } else {
-      const filtered = programmes.filter(prog => 
-        prog.session.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    // Apply both session filter and search filter
+    let filtered = programmes
+
+    // Filter by session
+    if (selectedSession !== 'all') {
+      filtered = filtered.filter(prog => prog.session === selectedSession)
+    }
+
+    // Filter by search term
+    if (searchTerm.trim() !== '') {
+      filtered = filtered.filter(prog => 
         prog.programmeCode.toLowerCase().includes(searchTerm.toLowerCase()) ||
         prog.programmeName.toLowerCase().includes(searchTerm.toLowerCase())
       )
-      setFilteredProgrammes(filtered)
     }
-  }, [searchTerm, programmes])
+
+    // Sort the filtered results
+    const sortedFiltered = sortProgrammes(filtered)
+    setFilteredProgrammes(sortedFiltered)
+  }, [searchTerm, selectedSession, programmes])
 
   const loadProgrammes = async () => {
     const data = await getProgrammes()
-    setProgrammes(data)
-    setFilteredProgrammes(data)
+    
+    // Sort programmes before setting state
+    const sortedData = sortProgrammes(data)
+    setProgrammes(sortedData)
+    setFilteredProgrammes(sortedData)
+    
+    // Extract unique sessions and sort them
+    const sessions = Array.from(new Set(data.map(p => p.session))).sort().reverse()
+    setAvailableSessions(sessions)
+    
+    // Set default session to the most recent one if available
+    if (sessions.length > 0 && selectedSession === 'all') {
+      setSelectedSession(sessions[0])
+    }
+
+    // Calculate statistics
+    const totalStudents = data.reduce((sum, prog) => sum + prog.noOfStudents, 0)
+    const totalSections = data.filter(prog => prog.section).length
+    
+    setStats({
+      totalProgrammes: data.length,
+      totalCourses: 0, // This should be calculated from actual course data
+      totalStudents: totalStudents,
+      totalSections: totalSections
+    })
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -125,37 +190,47 @@ export default function ProgrammesPage() {
   const handleBulkUpload = async (data: any[]) => {
     const result = await bulkUploadProgrammes(data)
     if (result.success) {
-      await loadProgrammes() // Reload immediately after upload
+      await loadProgrammes()
     }
     return result
   }
 
   const handleCloseBulkUpload = () => {
     setShowBulkUpload(false)
-    loadProgrammes() // Reload when closing to catch any changes
+    loadProgrammes()
+  }
+
+  const handleClearSearch = () => {
+    setSearchTerm('')
+    setSelectedSession('all')
   }
 
   return (
-    <div>
+    <div className="p-6">
       <Toaster position="top-right" />
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-3xl font-bold text-gray-900">Programmes Management</h1>
-        <div className="flex gap-3">
-          <button
-            onClick={() => setShowBulkUpload(true)}
-            className="bg-green-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-green-700"
-          >
-            <UploadIcon className="h-5 w-5" />
-            Bulk Upload
-          </button>
-          <button
-            onClick={() => setShowForm(!showForm)}
-            className="bg-blue-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-blue-700"
-          >
-            <Plus className="h-5 w-5" />
-            Add Programme
-          </button>
-        </div>
+      
+      {/* Header */}
+      <div className="mb-6">
+        <h1 className="text-3xl font-bold text-gray-900 mb-2">Programme Management</h1>
+        <p className="text-gray-600">Manage academic programmes and their batch details</p>
+      </div>
+
+      {/* Action Buttons */}
+      <div className="flex justify-end gap-3 mb-6">
+        <button
+          onClick={() => setShowBulkUpload(true)}
+          className="bg-green-600 text-white px-6 py-2.5 rounded-lg flex items-center gap-2 hover:bg-green-700 transition-colors shadow-sm"
+        >
+          <UploadIcon className="h-5 w-5" />
+          Bulk Upload
+        </button>
+        <button
+          onClick={() => setShowForm(!showForm)}
+          className="bg-blue-600 text-white px-6 py-2.5 rounded-lg flex items-center gap-2 hover:bg-blue-700 transition-colors shadow-sm"
+        >
+          <Plus className="h-5 w-5" />
+          Add Programme
+        </button>
       </div>
 
       {showBulkUpload && (
@@ -166,23 +241,55 @@ export default function ProgrammesPage() {
         />
       )}
 
-      {/* Search Filter */}
-      <div className="bg-white p-4 rounded-lg shadow-md mb-6">
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
-          <input
-            type="text"
-            placeholder="Search by session, programme code, or name..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-700"
-          />
+      {/* Statistics Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+          <div className="flex items-center gap-4">
+            <div className="bg-blue-100 p-3 rounded-lg">
+              <div className="w-8 h-8 bg-blue-600 rounded"></div>
+            </div>
+            <div>
+              <p className="text-gray-600 text-sm font-medium">Total Programmes</p>
+              <p className="text-3xl font-bold text-gray-900">{stats.totalProgrammes}</p>
+            </div>
+          </div>
         </div>
-        {searchTerm && (
-          <p className="text-sm text-gray-600 mt-2">
-            Found {filteredProgrammes.length} result{filteredProgrammes.length !== 1 ? 's' : ''}
-          </p>
-        )}
+
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+          <div className="flex items-center gap-4">
+            <div className="bg-green-100 p-3 rounded-lg">
+              <div className="w-8 h-8 bg-green-600 rounded"></div>
+            </div>
+            <div>
+              <p className="text-gray-600 text-sm font-medium">Total Courses</p>
+              <p className="text-3xl font-bold text-gray-900">{stats.totalCourses}</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+          <div className="flex items-center gap-4">
+            <div className="bg-orange-100 p-3 rounded-lg">
+              <div className="w-8 h-8 bg-orange-600 rounded"></div>
+            </div>
+            <div>
+              <p className="text-gray-600 text-sm font-medium">Total Students</p>
+              <p className="text-3xl font-bold text-gray-900">{stats.totalStudents}</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+          <div className="flex items-center gap-4">
+            <div className="bg-purple-100 p-3 rounded-lg">
+              <div className="w-8 h-8 bg-purple-600 rounded"></div>
+            </div>
+            <div>
+              <p className="text-gray-600 text-sm font-medium">Total Sections</p>
+              <p className="text-3xl font-bold text-gray-900">{stats.totalSections}</p>
+            </div>
+          </div>
+        </div>
       </div>
 
       {showForm && (
@@ -296,58 +403,167 @@ export default function ProgrammesPage() {
         </div>
       )}
 
-      <div className="bg-white rounded-lg shadow-md overflow-x-auto">
-        <table className="min-w-full divide-y divide-gray-200">
-          <thead className="bg-gray-50">
-            <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Code</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Name</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Session</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Duration</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Semester</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Section</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Students</th>
-              <th className="px-6 py-3 text-right text-xs font-medium text-gray-700 uppercase tracking-wider">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="bg-white divide-y divide-gray-200">
-            {filteredProgrammes.length === 0 ? (
-              <tr>
-                <td colSpan={8} className="px-6 py-8 text-center text-gray-500">
-                  {searchTerm ? 'No programmes found matching your search.' : 'No programmes added yet.'}
-                </td>
-              </tr>
-            ) : (
-              filteredProgrammes.map((programme) => (
-                <tr key={programme.id} className="hover:bg-gray-50">
-                  <td className="px-6 py-4 whitespace-nowrap font-medium text-gray-900">{programme.programmeCode}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-gray-900">{programme.programmeName}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-gray-700">{programme.session}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-gray-700">{programme.duration} years</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-gray-700">{programme.currentSemester}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-gray-700">{programme.section || '-'}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-gray-700">{programme.noOfStudents}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-right">
-                    <button
-                      onClick={() => handleEdit(programme)}
-                      className="text-blue-600 hover:text-blue-900 mr-4"
-                      title="Edit"
-                    >
-                      <Edit className="h-5 w-5 inline" />
-                    </button>
-                    <button
-                      onClick={() => handleDelete(programme.id)}
-                      className="text-red-600 hover:text-red-900"
-                      title="Delete"
-                    >
-                      <Trash2 className="h-5 w-5 inline" />
-                    </button>
-                  </td>
+      {/* Filter & Search Section */}
+      <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 mb-6">
+        <h3 className="text-lg font-semibold text-gray-900 mb-4">Filter & Search Programmes</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Session Dropdown Filter */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Batch Session</label>
+            <select
+              value={selectedSession}
+              onChange={(e) => setSelectedSession(e.target.value)}
+              className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 bg-white"
+            >
+              <option value="all">All Sessions</option>
+              {availableSessions.map((session) => (
+                <option key={session} value={session}>
+                  {session}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Search Input */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Search Programmes</label>
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
+              <input
+                type="text"
+                placeholder="Search by name or code..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Clear Search Button */}
+        {(searchTerm || selectedSession !== 'all') && (
+          <div className="mt-4 flex items-center justify-between">
+            <p className="text-sm text-gray-600">
+              Showing {filteredProgrammes.length} of {programmes.length} programme{filteredProgrammes.length !== 1 ? 's' : ''}
+            </p>
+            <button
+              onClick={handleClearSearch}
+              className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors text-sm"
+            >
+              Clear Search
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* Academic Programmes Table */}
+      <div className="bg-gray-50 p-6 rounded-xl border border-gray-200">
+        <div className="flex justify-between items-center mb-4">
+          <div>
+            <h3 className="text-xl font-bold text-gray-900">Academic Programmes</h3>
+            <p className="text-sm text-gray-600">
+              Batch: {selectedSession === 'all' ? 'All Sessions' : selectedSession}
+            </p>
+          </div>
+          <div className="text-right">
+            <p className="text-3xl font-bold text-gray-900">{filteredProgrammes.length}</p>
+            <p className="text-sm text-gray-600">programmes</p>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-lg shadow-sm overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
+                    Batch Session
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
+                    Code
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
+                    Programme Name
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
+                    Duration
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
+                    Current Sem
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
+                    Section
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
+                    Students
+                  </th>
+                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-700 uppercase tracking-wider">
+                    Actions
+                  </th>
                 </tr>
-              ))
-            )}
-          </tbody>
-        </table>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {filteredProgrammes.length === 0 ? (
+                  <tr>
+                    <td colSpan={8} className="px-6 py-12 text-center">
+                      <div className="flex flex-col items-center justify-center text-gray-500">
+                        <Search className="h-12 w-12 mb-3 text-gray-400" />
+                        <p className="text-lg font-medium">No programmes found</p>
+                        <p className="text-sm mt-1">
+                          {searchTerm || selectedSession !== 'all' 
+                            ? 'Try adjusting your filters or search terms' 
+                            : 'Start by adding a new programme'}
+                        </p>
+                      </div>
+                    </td>
+                  </tr>
+                ) : (
+                  filteredProgrammes.map((programme) => (
+                    <tr key={programme.id} className="hover:bg-gray-50 transition-colors">
+                      <td className="px-6 py-4 whitespace-nowrap text-gray-700 font-medium">
+                        {programme.session}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap font-medium text-blue-600">
+                        {programme.programmeCode}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-gray-900">
+                        {programme.programmeName}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-gray-700">
+                        {programme.duration} years
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-gray-700">
+                        {programme.currentSemester}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-gray-700">
+                        {programme.section || '-'}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-gray-700">
+                        {programme.noOfStudents}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-right">
+                        <button
+                          onClick={() => handleEdit(programme)}
+                          className="text-blue-600 hover:text-blue-900 mr-4 transition-colors"
+                          title="Edit"
+                        >
+                          <Edit className="h-5 w-5 inline" />
+                        </button>
+                        <button
+                          onClick={() => handleDelete(programme.id)}
+                          className="text-red-600 hover:text-red-900 transition-colors"
+                          title="Delete"
+                        >
+                          <Trash2 className="h-5 w-5 inline" />
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
       </div>
     </div>
   )

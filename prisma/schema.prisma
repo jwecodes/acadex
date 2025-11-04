@@ -52,6 +52,7 @@ model Programme {
   // Relationships
   courses  Course[]
   students Student[]
+  faculty  Faculty[]  // ✅ ADD THIS
 
   // Make combination of session, programmeCode, and section unique
   @@unique([session, programmeCode, section])
@@ -79,7 +80,8 @@ model Course {
   totalHours   Int         // Total contact hours per week
   
   // Course Details
-  courseType   CourseType  // THEORY/PRACTICAL/LAB
+  courseType   CourseType  // ✅ CHANGED: Now academic type
+  deliveryMode DeliveryMode @default(THEORY) // ✅ NEW: Theory/Practical/Both
   roomNo       String?
   attendance   Boolean     @default(true)
   category     CourseCategory // MANDATORY/ELECTIVE
@@ -93,15 +95,32 @@ model Course {
   teachingContents   TeachingContent[]
   studentEnrollments StudentEnrollment[]
 
-  // Make combination of session and courseCode unique
-  @@unique([session, courseCode])
+  @@unique([session, courseCode, programmeId])
   @@map("courses")
 }
 
+// ✅ NEW: Academic Course Types
 enum CourseType {
-  THEORY
-  PRACTICAL
-  LAB
+  CORE              // Core Course
+  SEC               // Skill Enhancement Course
+  INDUSTRY          // Industry Course
+  SKILL             // Skill Course
+  VAC               // Value Added Course
+  OPEN_ELECTIVE     // Open Elective
+  AEC               // Ability Enhancement Course
+  DSE               // Discipline Specific Elective
+  INTERNSHIP        // Internship
+  PROJECT           // Project
+  MOOC              // MOOC Course
+  CS                // Community Service
+  OTHER             // Other (define in description)
+}
+
+// ✅ NEW: Delivery Mode
+enum DeliveryMode {
+  THEORY            // Theory only
+  PRACTICAL         // Practical/Lab only
+  BOTH              // Both Theory and Practical
 }
 
 enum CourseCategory {
@@ -109,30 +128,30 @@ enum CourseCategory {
   ELECTIVE
 }
 
+
 // ============================================
-// FACULTY MANAGEMENT
+// FACULTY MANAGEMENT (UPDATED)
 // ============================================
 
 model Faculty {
   id          String   @id @default(uuid())
   userId      String   @unique
-  facultyId   String   // Employee ID
+  facultyId   String   @unique          // ✅ CHANGED: Now unique by itself (not with session)
   name        String
   designation String   // Professor, Assistant Professor, etc.
   email       String   @unique
-  contactNo   String
+  contactNo   String?  // ✅ CHANGED: Now optional
   department  String?
-  session     String   // Academic session they joined
+  programmeId String?  // ✅ NEW: Link to programme instead of session
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
   // Relationships
   user               User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  programme          Programme?           @relation(fields: [programmeId], references: [id], onDelete: SetNull)
   courseAllocations  CourseAllocation[]
   teachingContents   TeachingContent[]
 
-  // Make combination of session and facultyId unique
-  @@unique([session, facultyId])
   @@map("faculty")
 }
 
